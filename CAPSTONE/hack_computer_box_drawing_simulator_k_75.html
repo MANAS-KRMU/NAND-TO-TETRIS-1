@@ -1,0 +1,1416 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hack Computer & Box-Drawing Simulator — Nand to Tetris (K = 75)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            mono: ['"JetBrains Mono"', '"Fira Code"', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+            sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+          },
+          colors: {
+            slate: {
+              850: '#151e2e',
+              925: '#0c121e',
+              950: '#080c14',
+            }
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    /* Custom scrollbar for code & tables */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0c121e;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+    .hack-screen-wrapper {
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+    canvas#hackCanvas {
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-200 font-sans min-h-screen flex flex-col selection:bg-emerald-500/30 selection:text-emerald-200">
+
+  <!-- TOP HEADER & PARAMETER SUMMARY BAR -->
+  <header class="bg-slate-900 border-b border-slate-800 px-4 py-3 shadow-lg">
+    <div class="max-w-[1600px] mx-auto flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
+      <!-- Title & Course Metadata -->
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-lg bg-emerald-500/15 border border-emerald-500/40 flex items-center justify-center text-emerald-400 font-mono font-bold text-sm shadow-inner">
+            16b
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h1 class="text-base sm:text-lg font-bold tracking-tight text-white">Hack Computer &amp; Box-Drawing Simulator</h1>
+              <span class="px-2 py-0.5 text-[11px] font-mono font-semibold rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                ETCNTC301
+              </span>
+            </div>
+            <p class="text-xs text-slate-400">
+              Nand to Tetris – I Capstone &bull; Roll No: <span class="font-mono text-slate-200 font-semibold">2501730275</span> &bull; K.R. Mangalam University
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- K-Derived Parameter Badges & Viva Live Adjuster -->
+      <div class="flex flex-wrap items-center gap-2 text-xs">
+        <div class="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5">
+          <span class="text-slate-400">Personal K:</span>
+          <input
+            id="kInput"
+            type="number"
+            min="0"
+            max="235"
+            value="75"
+            class="w-14 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 font-mono font-bold text-emerald-400 text-center focus:outline-none focus:border-emerald-500"
+            title="Modify K for Viva Demonstration (Default: 75)"
+          />
+          <button
+            id="recalcKBtn"
+            class="ml-1 px-2.5 py-1 rounded bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-medium transition cursor-pointer shadow-sm"
+            title="Regenerate Box.asm for the entered K and assemble"
+          >
+            Recalculate &amp; Load Box.asm
+          </button>
+        </div>
+
+        <div class="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2">
+          <div class="bg-slate-850 border border-slate-800 rounded-lg px-2.5 py-1.5 font-mono">
+            <span class="text-slate-400 text-[11px]">Start Row:</span>
+            <span id="paramStartRow" class="text-amber-300 font-semibold ml-1">75</span>
+            <span id="paramBaseAddr" class="text-slate-400 text-[11px] ml-1">(18784)</span>
+          </div>
+          <div class="bg-slate-850 border border-slate-800 rounded-lg px-2.5 py-1.5 font-mono">
+            <span class="text-slate-400 text-[11px]">Box Size:</span>
+            <span id="paramBoxDim" class="text-sky-300 font-semibold ml-1">64×20 px</span>
+            <span id="paramWordsRow" class="text-slate-400 text-[11px] ml-1">(4 words/row)</span>
+          </div>
+          <div class="col-span-2 sm:col-span-1 bg-slate-850 border border-slate-800 rounded-lg px-2.5 py-1.5 font-mono">
+            <span class="text-slate-400 text-[11px]">K mod 3 = <strong id="paramKMod3" class="text-purple-300">0</strong>:</span>
+            <span id="paramExtraFeature" class="text-purple-300 ml-1">Exports symbols.txt</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN WORKBENCH GRID -->
+  <main class="flex-1 max-w-[1600px] w-full mx-auto p-3 sm:p-4 grid grid-cols-1 lg:grid-cols-12 gap-4">
+
+    <!-- LEFT / TOP COLUMN: HACK SCREEN + KEYBOARD + CPU CONTROLS (5 cols on lg) -->
+    <section class="lg:col-span-5 flex flex-col gap-4">
+
+      <!-- Hack 512x256 Screen Card -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5 shadow-lg flex flex-col gap-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" id="screenStatusDot"></span>
+            <h2 class="text-sm font-semibold text-white">Hack Display (512 × 256 px)</h2>
+            <span class="text-[11px] font-mono text-slate-400">RAM[16384..24575]</span>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <label class="inline-flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer select-none bg-slate-950 border border-slate-800 px-2.5 py-1 rounded-lg hover:border-slate-700">
+              <input type="checkbox" id="gridOverlayToggle" checked class="accent-emerald-500 rounded cursor-pointer" />
+              <span>Word &amp; Row Guides</span>
+            </label>
+            <button
+              id="clearScreenBtn"
+              class="text-xs px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition cursor-pointer"
+              title="Zero out Screen RAM (16384..24575)"
+            >
+              Clear VRAM
+            </button>
+          </div>
+        </div>
+
+        <!-- 2:1 Aspect Ratio Hack Screen Container -->
+        <div class="relative w-full bg-slate-950 border-2 border-slate-700 rounded-lg overflow-hidden shadow-inner hack-screen-wrapper">
+          <canvas
+            id="hackCanvas"
+            width="512"
+            height="256"
+            class="w-full h-auto block bg-white"
+          ></canvas>
+          <div
+            id="canvasHoverTooltip"
+            class="hidden pointer-events-none absolute bottom-2 right-2 bg-slate-950/90 border border-slate-700 text-[11px] font-mono text-slate-200 px-2 py-1 rounded shadow"
+          ></div>
+        </div>
+
+        <!-- Virtual Keyboard & KBD RAM[24576] Controller -->
+        <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 flex flex-col gap-2.5">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-semibold text-slate-300">Keyboard Input</span>
+              <span class="text-[11px] text-slate-400">(Press any physical key or hold below)</span>
+            </div>
+            <div class="flex items-center gap-2 font-mono text-xs">
+              <span class="text-slate-400">KBD (RAM[24576]):</span>
+              <span
+                id="kbdRegisterBadge"
+                class="px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300 font-bold min-w-[64px] text-center"
+              >
+                0 (IDLE)
+              </span>
+            </div>
+          </div>
+
+          <!-- Touch & Mouse Friendly Hold Keys -->
+          <div class="flex flex-wrap items-center gap-2">
+            <button
+              id="holdSpaceBtn"
+              class="flex-1 min-w-[170px] py-2.5 px-4 rounded-lg bg-gradient-to-b from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 active:from-emerald-600 active:to-emerald-700 text-slate-950 font-bold text-xs tracking-wide shadow-md shadow-emerald-950/50 border border-emerald-400/50 transition select-none cursor-pointer"
+            >
+              HOLD KEY TO DRAW BOX (SPACE = 32)
+            </button>
+            <div class="flex items-center gap-1.5">
+              <button data-keycode="65" data-label="A" class="virtual-key px-3 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 active:bg-amber-500 active:text-slate-950 border border-slate-700 font-mono text-xs font-bold text-slate-200 select-none cursor-pointer transition">A</button>
+              <button data-keycode="75" data-label="K" class="virtual-key px-3 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 active:bg-amber-500 active:text-slate-950 border border-slate-700 font-mono text-xs font-bold text-slate-200 select-none cursor-pointer transition">K</button>
+              <button data-keycode="128" data-label="ENT" class="virtual-key px-3 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 active:bg-amber-500 active:text-slate-950 border border-slate-700 font-mono text-xs font-bold text-slate-200 select-none cursor-pointer transition">ENT</button>
+              <button data-keycode="130" data-label="←" class="virtual-key px-3 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 active:bg-amber-500 active:text-slate-950 border border-slate-700 font-mono text-xs font-bold text-slate-200 select-none cursor-pointer transition">←</button>
+              <button data-keycode="132" data-label="→" class="virtual-key px-3 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 active:bg-amber-500 active:text-slate-950 border border-slate-700 font-mono text-xs font-bold text-slate-200 select-none cursor-pointer transition">→</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CPU Execution Controls & Live Register / RAM Inspector -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-3.5 shadow-lg flex flex-col gap-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <h2 class="text-sm font-semibold text-white">Hack CPU Emulator</h2>
+            <span
+              id="cpuRunStatus"
+              class="px-2 py-0.5 text-[11px] font-mono font-semibold rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
+            >
+              RUNNING
+            </span>
+          </div>
+
+          <div class="flex items-center gap-1.5">
+            <button
+              id="runPauseBtn"
+              class="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs transition cursor-pointer"
+            >
+              Pause
+            </button>
+            <button
+              id="stepBtn"
+              class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-medium text-xs transition cursor-pointer"
+            >
+              Step
+            </button>
+            <button
+              id="resetBtn"
+              class="px-3 py-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 font-medium text-xs transition cursor-pointer"
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+
+        <!-- Speed Control -->
+        <div class="flex items-center justify-between gap-3 bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs">
+          <span class="text-slate-400 font-medium whitespace-nowrap">Clock Speed:</span>
+          <input
+            id="speedSlider"
+            type="range"
+            min="1"
+            max="4"
+            value="4"
+            class="w-full accent-emerald-500 cursor-pointer"
+          />
+          <span id="speedLabel" class="font-mono text-emerald-400 font-semibold whitespace-nowrap min-w-[110px] text-right">
+            Turbo (400/frame)
+          </span>
+        </div>
+
+        <!-- Core CPU Registers (PC, A, D, M) -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono">
+          <div class="bg-slate-950 border border-slate-800 rounded-lg p-2.5">
+            <div class="text-[11px] text-slate-400">PC (ROM Addr)</div>
+            <div id="regPC" class="text-base font-bold text-amber-400 mt-0.5">0</div>
+          </div>
+          <div class="bg-slate-950 border border-slate-800 rounded-lg p-2.5">
+            <div class="text-[11px] text-slate-400">A Register</div>
+            <div id="regA" class="text-base font-bold text-sky-400 mt-0.5">0</div>
+          </div>
+          <div class="bg-slate-950 border border-slate-800 rounded-lg p-2.5">
+            <div class="text-[11px] text-slate-400">D Register</div>
+            <div id="regD" class="text-base font-bold text-emerald-400 mt-0.5">0</div>
+          </div>
+          <div class="bg-slate-950 border border-slate-800 rounded-lg p-2.5">
+            <div class="text-[11px] text-slate-400">M (RAM[A])</div>
+            <div id="regM" class="text-base font-bold text-purple-400 mt-0.5">0</div>
+          </div>
+        </div>
+
+        <!-- Current Instruction & Cycle Counter -->
+        <div class="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 flex flex-wrap items-center justify-between gap-2 font-mono text-xs">
+          <div>
+            <span class="text-slate-400">Current ROM[PC]:</span>
+            <span id="currentInstBinary" class="text-slate-200 ml-1">0110000000000000</span>
+            <span id="currentInstMnemonic" class="text-emerald-400 font-semibold ml-1.5">(@KBD)</span>
+          </div>
+          <div class="text-slate-400">
+            Cycles: <span id="cycleCount" class="text-slate-200 font-semibold">0</span>
+          </div>
+        </div>
+
+        <!-- Program Variables in RAM[16..19] -->
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <span class="text-xs font-semibold text-slate-300">Allocated Variables (RAM[16..19])</span>
+            <span class="text-[11px] font-mono text-slate-400">Static RAM Segment</span>
+          </div>
+          <div id="ramVarsGrid" class="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-xs">
+            <!-- Populated dynamically -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT COLUMN: TWO-PASS ASSEMBLER, ROM & HDL VIEWER (7 cols on lg) -->
+    <section class="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-xl shadow-lg flex flex-col overflow-hidden">
+
+      <!-- Tab Bar & Action Buttons -->
+      <div class="bg-slate-950/70 border-b border-slate-800 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+          <button
+            data-tab="workbench"
+            class="tab-btn px-3 py-1.5 rounded-md text-xs font-semibold bg-emerald-600 text-white transition cursor-pointer"
+          >
+            Assembler &amp; ROM
+          </button>
+          <button
+            data-tab="hdl"
+            class="tab-btn px-3 py-1.5 rounded-md text-xs font-semibold text-slate-400 hover:text-white transition cursor-pointer"
+          >
+            HDL Architecture (CPU / Memory / Computer)
+          </button>
+          <button
+            data-tab="guide"
+            class="tab-btn px-3 py-1.5 rounded-md text-xs font-semibold text-slate-400 hover:text-white transition cursor-pointer"
+          >
+            Report &amp; Viva Notes
+          </button>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            id="assembleBtn"
+            class="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition cursor-pointer shadow"
+          >
+            Assemble &amp; Load ROM
+          </button>
+          <button
+            id="downloadHackBtn"
+            class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-mono transition cursor-pointer"
+            title="Download generated Box.hack binary"
+          >
+            ↓ Box.hack
+          </button>
+          <button
+            id="downloadSymbolsBtn"
+            class="px-2.5 py-1.5 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/30 text-xs font-mono transition cursor-pointer"
+            title="Download symbols.txt (K mod 3 = 0 feature)"
+          >
+            ↓ symbols.txt
+          </button>
+        </div>
+      </div>
+
+      <!-- TAB 1: ASSEMBLER EDITOR + ROM + SYMBOLS -->
+      <div id="tab-workbench" class="flex-1 flex flex-col">
+        <!-- Assembler Status Banner -->
+        <div id="assemblerStatusBanner" class="px-4 py-2 bg-emerald-950/40 border-b border-emerald-800/40 text-xs font-mono text-emerald-300 flex flex-wrap items-center justify-between gap-2">
+          <span>✓ Two-Pass Assembly succeeded: 90 instructions encoded, 9 ROM labels, 4 RAM variables allocated.</span>
+          <span class="text-slate-400">K mod 3 = 0 → symbols.txt ready</span>
+        </div>
+
+        <div class="flex-1 grid grid-cols-1 xl:grid-cols-12 divide-y xl:divide-y-0 xl:divide-x divide-slate-800">
+          <!-- Column A: Box.asm Editor (5 cols) -->
+          <div class="xl:col-span-5 flex flex-col min-h-[380px]">
+            <div class="px-3 py-2 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between">
+              <span class="text-xs font-mono font-semibold text-amber-300">Box.asm</span>
+              <span class="text-[11px] text-slate-400">Editable Hack Assembly</span>
+            </div>
+            <textarea
+              id="asmEditor"
+              spellcheck="false"
+              class="flex-1 w-full bg-slate-950 text-slate-200 font-mono text-xs leading-relaxed p-3 resize-none focus:outline-none"
+            ></textarea>
+          </div>
+
+          <!-- Column B: Assembled ROM Box.hack (4 cols) -->
+          <div class="xl:col-span-4 flex flex-col min-h-[380px] max-h-[640px]">
+            <div class="px-3 py-2 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between">
+              <span class="text-xs font-mono font-semibold text-sky-300">ROM32K (Box.hack)</span>
+              <span id="romCountBadge" class="text-[11px] font-mono text-slate-400">90 words</span>
+            </div>
+            <div id="romListContainer" class="flex-1 overflow-y-auto bg-slate-950 font-mono text-[11px] divide-y divide-slate-900">
+              <!-- ROM lines populated dynamically -->
+            </div>
+          </div>
+
+          <!-- Column C: Symbol Table symbols.txt (3 cols) -->
+          <div class="xl:col-span-3 flex flex-col min-h-[380px] max-h-[640px]">
+            <div class="px-3 py-2 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between">
+              <span class="text-xs font-mono font-semibold text-purple-300">symbols.txt</span>
+              <span class="text-[11px] font-mono text-purple-400">K mod 3 = 0</span>
+            </div>
+            <div id="symbolsListContainer" class="flex-1 overflow-y-auto bg-slate-950 font-mono text-[11px] p-2 space-y-1">
+              <!-- Symbols populated dynamically -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: HDL ARCHITECTURE & LIVE BUS ACTIVITY -->
+      <div id="tab-hdl" class="hidden flex-1 flex flex-col p-4 gap-4 overflow-y-auto">
+        <!-- Live Bus Activity Diagram -->
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-4">
+          <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <h3 class="text-sm font-semibold text-white">Live Hardware Data Path &amp; Memory Map Activity</h3>
+            <span class="text-xs font-mono text-slate-400">Updates live as CPU executes</span>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3 font-mono text-xs">
+            <div id="hdlCardROM" class="p-3 rounded-lg border border-slate-700 bg-slate-900 transition">
+              <div class="text-amber-300 font-bold mb-1">ROM32K (Instruction Memory)</div>
+              <div class="text-slate-400">Address Bus: <span id="hdlRomAddr" class="text-white">pc = 0</span></div>
+              <div class="text-slate-400">Out: <span id="hdlRomOut" class="text-emerald-400">0110000000000000</span></div>
+            </div>
+
+            <div id="hdlCardCPU" class="p-3 rounded-lg border border-emerald-500/50 bg-slate-900 transition">
+              <div class="text-emerald-300 font-bold mb-1">CPU (ALU + A/D Regs + PC)</div>
+              <div class="text-slate-400">Type: <span id="hdlCpuType" class="text-white">A-Instruction</span></div>
+              <div class="text-slate-400">writeM: <span id="hdlWriteM" class="text-amber-300">0</span> | addressM: <span id="hdlAddrM" class="text-sky-300">0</span></div>
+            </div>
+
+            <div id="hdlCardMem" class="p-3 rounded-lg border border-slate-700 bg-slate-900 transition">
+              <div class="text-sky-300 font-bold mb-1">Memory.hdl Chip Select</div>
+              <div class="text-slate-400">Active Region: <span id="hdlMemRegion" class="text-purple-300 font-bold">Keyboard (24576)</span></div>
+              <div class="text-slate-400">address[13..14]: <span id="hdlAddrBits" class="text-white">11</span></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- HDL Source Code Cards -->
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-3">
+          <div class="bg-slate-950 border border-slate-800 rounded-lg overflow-hidden flex flex-col">
+            <div class="px-3 py-2 bg-slate-900 border-b border-slate-800 font-mono text-xs font-semibold text-emerald-300">Computer.hdl</div>
+            <pre class="p-3 font-mono text-[11px] text-slate-300 overflow-x-auto leading-relaxed">CHIP Computer {
+    IN reset;
+    PARTS:
+    ROM32K(address=pc, out=instruction);
+    CPU(inM=memOut, instruction=instruction,
+        reset=reset, outM=outM,
+        writeM=writeM, addressM=addressM,
+        pc=pc);
+    Memory(in=outM, load=writeM,
+           address=addressM, out=memOut);
+}</pre>
+          </div>
+
+          <div class="bg-slate-950 border border-slate-800 rounded-lg overflow-hidden flex flex-col">
+            <div class="px-3 py-2 bg-slate-900 border-b border-slate-800 font-mono text-xs font-semibold text-sky-300">Memory.hdl</div>
+            <pre class="p-3 font-mono text-[11px] text-slate-300 overflow-x-auto leading-relaxed">CHIP Memory {
+    IN in[16], load, address[15];
+    OUT out[16];
+    PARTS:
+    // 00, 01 -> RAM16K (0..16383)
+    // 10     -> Screen (16384..24575)
+    // 11     -> Keyboard (24576)
+    DMux4Way(in=load, sel=address[13..14],
+             a=loadRamA, b=loadRamB,
+             c=loadScreen, d=loadKbd);
+    Or(a=loadRamA, b=loadRamB, out=loadRam);
+    RAM16K(in=in, load=loadRam,
+           address=address[0..13], out=ramOut);
+    Screen(in=in, load=loadScreen,
+           address=address[0..12], out=scrOut);
+    Keyboard(out=kbdOut);
+    Mux4Way16(a=ramOut, b=ramOut,
+              c=scrOut, d=kbdOut,
+              sel=address[13..14], out=out);
+}</pre>
+          </div>
+
+          <div class="bg-slate-950 border border-slate-800 rounded-lg overflow-hidden flex flex-col">
+            <div class="px-3 py-2 bg-slate-900 border-b border-slate-800 font-mono text-xs font-semibold text-amber-300">CPU.hdl (Control Logic)</div>
+            <pre class="p-3 font-mono text-[11px] text-slate-300 overflow-x-auto leading-relaxed">CHIP CPU {
+    IN inM[16], instruction[16], reset;
+    OUT outM[16], writeM, addressM[15], pc[15];
+    PARTS:
+    // Decode A vs C instruction (bit 15)
+    Not(in=instruction[15], out=isAInst);
+    Mux16(a=aluOut, b=instruction,
+          sel=isAInst, out=aRegIn);
+    Or(a=isAInst, b=instruction[5], out=loadA);
+    ARegister(in=aRegIn, load=loadA,
+              out=aRegOut, out[0..14]=addressM);
+    // D Register & ALU
+    And(a=instruction[15], b=instruction[4], out=loadD);
+    DRegister(in=aluOut, load=loadD, out=dRegOut);
+    Mux16(a=aRegOut, b=inM,
+          sel=instruction[12], out=aluY);
+    ALU(x=dRegOut, y=aluY,
+        zx=instruction[11], nx=instruction[10],
+        zy=instruction[9],  ny=instruction[8],
+        f=instruction[7],   no=instruction[6],
+        out=aluOut, out=outM, zr=zr, ng=ng);
+    And(a=instruction[15], b=instruction[3], out=writeM);
+}</pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 3: REPORT & VIVA NOTES -->
+      <div id="tab-guide" class="hidden flex-1 p-4 overflow-y-auto space-y-4 text-xs leading-relaxed text-slate-300">
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2">
+          <h3 class="text-sm font-bold text-emerald-400">Capstone Summary — Roll No: 2501730275 (K = 75)</h3>
+          <ul class="list-disc list-inside space-y-1 text-slate-300">
+            <li><strong class="text-white">Personal Number (K):</strong> Last two digits of <code class="text-amber-300">2501730275</code> = <code class="text-amber-300">75</code>.</li>
+            <li><strong class="text-white">Part B Extra Feature (<code class="text-purple-300">75 mod 3 = 0</code>):</strong> Two-pass assembler records all predefined symbols, ROM labels, and allocated RAM variables (<code class="text-sky-300">16+</code>) and exports them to <code class="text-purple-300">symbols.txt</code>.</li>
+            <li><strong class="text-white">Starting Row:</strong> Row <code class="text-amber-300">75</code> → Screen memory offset = <code class="text-amber-300">16384 + (32 × 75) = 18784</code>.</li>
+            <li><strong class="text-white">Box Dimensions:</strong> Height = <code class="text-sky-300">20 rows</code> (rows 75–94). Width = <code class="text-sky-300">16 × ((75 mod 4) + 1) = 16 × 4 = 64 pixels</code> (<code class="text-sky-300">4 words</code> per row from the left edge).</li>
+          </ul>
+        </div>
+
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2">
+          <h3 class="text-sm font-bold text-amber-300">Quick Viva Demonstration Cheatsheet</h3>
+          <p>If your examiner asks you to modify the box position or size live during the 5-minute viva:</p>
+          <ol class="list-decimal list-inside space-y-1.5 text-slate-300">
+            <li><strong class="text-white">Move the box down by 10 rows:</strong> Change <code class="text-emerald-300">@18784</code> in both <code class="text-amber-300">(DRAW_BOX)</code> and <code class="text-amber-300">(ERASE_BOX)</code> to <code class="text-emerald-300">@19104</code> (<code class="text-slate-400">18784 + 32 × 10</code>), then click <strong>Assemble &amp; Load ROM</strong>.</li>
+            <li><strong class="text-white">Change box height:</strong> Change <code class="text-emerald-300">@20</code> to the requested row count (e.g., <code class="text-emerald-300">@30</code>).</li>
+            <li><strong class="text-white">Change box width:</strong> Change <code class="text-emerald-300">@4</code> (words per row) to <code class="text-emerald-300">@2</code> for 32 pixels or <code class="text-emerald-300">@6</code> for 96 pixels.</li>
+            <li>Or simply enter a new <code class="text-emerald-300">K</code> in the top bar and click <strong>Recalculate &amp; Load Box.asm</strong> to see the updated assembly code immediately!</li>
+          </ol>
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <script>
+    // =========================================================================
+    // 1. HACK CONSTANTS & TABLES (MATCHING assembler.py EXACTLY)
+    // =========================================================================
+    const PREDEFINED_SYMBOLS = {
+      SP: 0, LCL: 1, ARG: 2, THIS: 3, THAT: 4,
+      R0: 0, R1: 1, R2: 2, R3: 3, R4: 4,
+      R5: 5, R6: 6, R7: 7, R8: 8, R9: 9,
+      R10: 10, R11: 11, R12: 12, R13: 13, R14: 14, R15: 15,
+      SCREEN: 16384, KBD: 24576
+    };
+
+    const COMP_TABLE = {
+      "0":   "0101010", "1":   "0111111", "-1":  "0111010",
+      "D":   "0001100", "A":   "0110000", "M":   "1110000",
+      "!D":  "0001101", "!A":  "0110001", "!M":  "1110001",
+      "-D":  "0001111", "-A":  "0110011", "-M":  "1110011",
+      "D+1": "0011111", "A+1": "0110111", "M+1": "1110111",
+      "D-1": "0001110", "A-1": "0110010", "M-1": "1110010",
+      "D+A": "0000010", "A+D": "0000010",
+      "D+M": "1000010", "M+D": "1000010",
+      "D-A": "0010011", "D-M": "1010011",
+      "A-D": "0000111", "M-D": "1000111",
+      "D&A": "0000000", "A&D": "0000000",
+      "D&M": "1000000", "M&D": "1000000",
+      "D|A": "0010101", "A|D": "0010101",
+      "D|M": "1010101", "M|D": "1010101"
+    };
+
+    const DEST_TABLE = {
+      "": "000", "M": "001", "D": "010", "MD": "011",
+      "A": "100", "AM": "101", "AD": "110", "AMD": "111"
+    };
+
+    const JUMP_TABLE = {
+      "": "000", "JGT": "001", "JEQ": "010", "JGE": "011",
+      "JLT": "100", "JNE": "101", "JLE": "110", "JMP": "111"
+    };
+
+    // =========================================================================
+    // 2. GENERATE Box.asm FOR ANY K (DEFAULT K = 75)
+    // =========================================================================
+    function generateBoxAsmForK(kVal) {
+      const k = Math.max(0, Math.min(235, Math.floor(Number(kVal) || 0)));
+      const startRow = k;
+      const baseAddr = 16384 + 32 * startRow;
+      const wordsPerRow = (k % 4) + 1;
+      const widthPx = 16 * wordsPerRow;
+
+      return `// Box.asm for Roll No: 2501730275 (K = ${k})
+// Starting row = ${startRow} -> base screen address = 16384 + 32*${startRow} = ${baseAddr}
+// Height = 20 rows
+// Width  = ${widthPx} pixels = ${wordsPerRow} word(s) per row
+
+(MAIN)
+    @KBD
+    D=M
+    @DRAW_BOX
+    D;JNE       // If any key is pressed (KBD != 0), draw box
+
+    @ERASE_BOX
+    0;JMP       // Otherwise, erase box
+
+// Draws 20 rows x ${wordsPerRow} word(s) (-1 = all 16 bits black)
+(DRAW_BOX)
+    @${baseAddr}
+    D=A
+    @rowAddr
+    M=D         // rowAddr = ${baseAddr}
+
+    @20
+    D=A
+    @rowCount
+    M=D         // rowCount = 20
+
+(DRAW_ROW_LOOP)
+    @rowCount
+    D=M
+    @MAIN
+    D;JEQ       // Done all 20 rows -> re-check keyboard
+
+    @rowAddr
+    D=M
+    @wordAddr
+    M=D         // wordAddr = start of current row
+
+    @${wordsPerRow}
+    D=A
+    @colCount
+    M=D         // colCount = ${wordsPerRow} word(s) (${widthPx} pixels)
+
+(DRAW_WORD_LOOP)
+    @colCount
+    D=M
+    @NEXT_DRAW_ROW
+    D;JEQ       // Done ${wordsPerRow} word(s) in this row
+
+    @wordAddr
+    A=M
+    M=-1        // Set all 16 pixels in word to black
+
+    @wordAddr
+    M=M+1       // Next word to the right
+    @colCount
+    M=M-1
+    @DRAW_WORD_LOOP
+    0;JMP
+
+(NEXT_DRAW_ROW)
+    @32
+    D=A
+    @rowAddr
+    M=D+M       // Advance to next screen row (+32 words)
+
+    @rowCount
+    M=M-1
+    @DRAW_ROW_LOOP
+    0;JMP
+
+// Erases 20 rows x ${wordsPerRow} word(s) (0 = all 16 bits white/cleared)
+(ERASE_BOX)
+    @${baseAddr}
+    D=A
+    @rowAddr
+    M=D         // rowAddr = ${baseAddr}
+
+    @20
+    D=A
+    @rowCount
+    M=D         // rowCount = 20
+
+(ERASE_ROW_LOOP)
+    @rowCount
+    D=M
+    @MAIN
+    D;JEQ       // Done all 20 rows -> re-check keyboard
+
+    @rowAddr
+    D=M
+    @wordAddr
+    M=D         // wordAddr = start of current row
+
+    @${wordsPerRow}
+    D=A
+    @colCount
+    M=D         // colCount = ${wordsPerRow} word(s) (${widthPx} pixels)
+
+(ERASE_WORD_LOOP)
+    @colCount
+    D=M
+    @NEXT_ERASE_ROW
+    D;JEQ
+
+    @wordAddr
+    A=M
+    M=0         // Clear all 16 pixels in word
+
+    @wordAddr
+    M=M+1
+    @colCount
+    M=M-1
+    @ERASE_WORD_LOOP
+    0;JMP
+
+(NEXT_ERASE_ROW)
+    @32
+    D=A
+    @rowAddr
+    M=D+M       // Advance to next screen row (+32 words)
+
+    @rowCount
+    M=M-1
+    @ERASE_ROW_LOOP
+    0;JMP`;
+    }
+
+    // =========================================================================
+    // 3. TWO-PASS HACK ASSEMBLER ENGINE
+    // =========================================================================
+    function assembleHackCode(sourceText) {
+      const symbols = { ...PREDEFINED_SYMBOLS };
+      const labelNames = new Set();
+      const varNames = new Set();
+
+      const rawLines = sourceText.split(/\r?\n/);
+      const cleaned = [];
+
+      for (let i = 0; i < rawLines.length; i++) {
+        const noComment = rawLines[i].split("//")[0].trim();
+        if (noComment.length > 0) {
+          cleaned.push({ text: noComment, srcLine: i + 1 });
+        }
+      }
+
+      // Pass 1: Label Processing
+      const instructions = [];
+      let romAddress = 0;
+      for (const item of cleaned) {
+        const line = item.text;
+        if (line.startsWith("(") && line.endsWith(")")) {
+          const label = line.slice(1, -1).trim();
+          if (!label) {
+            throw new Error(`Line ${item.srcLine}: Empty label declaration`);
+          }
+          if (!(label in symbols)) {
+            symbols[label] = romAddress;
+            labelNames.add(label);
+          }
+        } else {
+          instructions.push(item);
+          romAddress++;
+        }
+      }
+
+      // Pass 2: Binary Conversion & Variable Allocation starting at RAM 16
+      let nextVarAddr = 16;
+      const binaryLines = [];
+      const romMeta = [];
+
+      for (const item of instructions) {
+        const inst = item.text;
+        if (inst.startsWith("@")) {
+          const operand = inst.slice(1).trim();
+          if (!operand) {
+            throw new Error(`Line ${item.srcLine}: Missing operand after '@'`);
+          }
+          let addr;
+          if (/^\d+$/.test(operand)) {
+            addr = parseInt(operand, 10);
+            if (addr < 0 || addr > 32767) {
+              throw new Error(`Line ${item.srcLine}: A-instruction constant ${addr} out of 15-bit range (0..32767)`);
+            }
+          } else {
+            if (!(operand in symbols)) {
+              symbols[operand] = nextVarAddr++;
+              varNames.add(operand);
+            }
+            addr = symbols[operand];
+          }
+          const bin = addr.toString(2).padStart(16, "0");
+          binaryLines.push(bin);
+          romMeta.push({ binary: bin, mnemonic: inst, srcLine: item.srcLine });
+        } else {
+          let destPart = "";
+          let rest = inst;
+          if (inst.includes("=")) {
+            const idx = inst.indexOf("=");
+            destPart = inst.slice(0, idx).trim();
+            rest = inst.slice(idx + 1).trim();
+          }
+          let compPart = rest;
+          let jumpPart = "";
+          if (rest.includes(";")) {
+            const idx = rest.indexOf(";");
+            compPart = rest.slice(0, idx).trim();
+            jumpPart = rest.slice(idx + 1).trim();
+          }
+
+          if (!(compPart in COMP_TABLE)) {
+            throw new Error(`Line ${item.srcLine}: Invalid comp field '${compPart}' in '${inst}'`);
+          }
+          if (!(destPart in DEST_TABLE)) {
+            throw new Error(`Line ${item.srcLine}: Invalid dest field '${destPart}' in '${inst}'`);
+          }
+          if (!(jumpPart in JUMP_TABLE)) {
+            throw new Error(`Line ${item.srcLine}: Invalid jump field '${jumpPart}' in '${inst}'`);
+          }
+
+          const bin = `111${COMP_TABLE[compPart]}${DEST_TABLE[destPart]}${JUMP_TABLE[jumpPart]}`;
+          binaryLines.push(bin);
+          romMeta.push({ binary: bin, mnemonic: inst, srcLine: item.srcLine });
+        }
+      }
+
+      return {
+        binaryLines,
+        romMeta,
+        symbols,
+        labelNames,
+        varNames
+      };
+    }
+
+    // =========================================================================
+    // 4. HACK COMPUTER EMULATOR STATE (RAM[0..24576], ROM32K, CPU)
+    // =========================================================================
+    const hackState = {
+      currentK: 75,
+      ram: new Int16Array(24577), // 0..16383 RAM16K, 16384..24575 Screen, 24576 KBD
+      rom: new Uint16Array(32768),
+      romLength: 0,
+      romMeta: [],
+      symbols: {},
+      labelNames: new Set(),
+      varNames: new Set(),
+      pc: 0,
+      regA: 0,
+      regD: 0,
+      cycles: 0,
+      running: true,
+      stepsPerFrame: 400,
+      screenDirty: true,
+      lastWriteAddr: -1,
+      lastWriteM: 0
+    };
+
+    // Execute 1 single Hack CPU clock cycle
+    function stepHackCPU() {
+      if (hackState.romLength === 0) return;
+
+      const pc = hackState.pc & 0x7FFF;
+      const inst = hackState.rom[pc] || 0;
+      const isCInst = (inst & 0x8000) !== 0;
+
+      if (!isCInst) {
+        // A-Instruction: @value
+        const value = inst & 0x7FFF;
+        hackState.regA = value;
+        hackState.pc = (pc + 1) & 0x7FFF;
+        hackState.lastWriteM = 0;
+      } else {
+        // C-Instruction: 111 a c1 c2 c3 c4 c5 c6 d1 d2 d3 j1 j2 j3
+        const aBit  = (inst >> 12) & 1;
+        const zx    = (inst >> 11) & 1;
+        const nx    = (inst >> 10) & 1;
+        const zy    = (inst >> 9)  & 1;
+        const ny    = (inst >> 8)  & 1;
+        const fBit  = (inst >> 7)  & 1;
+        const no    = (inst >> 6)  & 1;
+
+        const d1    = (inst >> 5)  & 1; // A
+        const d2    = (inst >> 4)  & 1; // D
+        const d3    = (inst >> 3)  & 1; // M
+
+        const j1    = (inst >> 2)  & 1; // < 0
+        const j2    = (inst >> 1)  & 1; // == 0
+        const j3    = inst & 1;         // > 0
+
+        const addrA = hackState.regA & 0x7FFF;
+        const inM = addrA <= 24576 ? hackState.ram[addrA] : 0;
+
+        let x = hackState.regD;
+        let y = aBit ? inM : hackState.regA;
+
+        if (zx) x = 0;
+        if (nx) x = ~x;
+        if (zy) y = 0;
+        if (ny) y = ~y;
+
+        let out = fBit ? (x + y) : (x & y);
+        if (no) out = ~out;
+
+        // Wrap to signed 16-bit integer
+        out = (out << 16) >> 16;
+
+        // Write destinations (note: read old A for M write, then update A if d1)
+        if (d3 && addrA <= 24575) {
+          if (hackState.ram[addrA] !== out) {
+            hackState.ram[addrA] = out;
+            if (addrA >= 16384 && addrA <= 24575) {
+              hackState.screenDirty = true;
+            }
+          }
+          hackState.lastWriteM = 1;
+          hackState.lastWriteAddr = addrA;
+        } else {
+          hackState.lastWriteM = 0;
+        }
+
+        if (d2) {
+          hackState.regD = out;
+        }
+        if (d1) {
+          hackState.regA = out;
+        }
+
+        // Jump Evaluation
+        const zr = out === 0;
+        const ng = out < 0;
+        const pos = !zr && !ng;
+
+        const shouldJump = (j1 && ng) || (j2 && zr) || (j3 && pos);
+        if (shouldJump) {
+          hackState.pc = hackState.regA & 0x7FFF;
+        } else {
+          hackState.pc = (pc + 1) & 0x7FFF;
+        }
+      }
+
+      hackState.cycles++;
+    }
+
+    // =========================================================================
+    // 5. HACK 512x256 DISPLAY RENDERER
+    // =========================================================================
+    const canvas = document.getElementById("hackCanvas");
+    const ctx = canvas.getContext("2d", { alpha: false });
+    const imgData = ctx.createImageData(512, 256);
+    const pixelBuf = new Uint32Array(imgData.data.buffer);
+
+    // Little-endian ABGR colors: White (#f8fafc) and Ink Black (#090d16)
+    const COLOR_WHITE = 0xFFFCF8F8;
+    const COLOR_BLACK = 0xFF160D09;
+
+    function renderHackScreen() {
+      const showGuides = document.getElementById("gridOverlayToggle").checked;
+      const startRow = hackState.currentK;
+      const endRow = startRow + 19;
+      const wordsPerRow = (hackState.currentK % 4) + 1;
+
+      for (let row = 0; row < 256; row++) {
+        const rowBaseAddr = 16384 + (row << 5); // 16384 + 32 * row
+        const rowPixelOffset = row << 9;        // 512 * row
+
+        for (let wordIdx = 0; wordIdx < 32; wordIdx++) {
+          const word = hackState.ram[rowBaseAddr + wordIdx];
+          const xBase = wordIdx << 4; // 16 * wordIdx
+
+          for (let bit = 0; bit < 16; bit++) {
+            // In Hack, LSB (bit 0) is the leftmost pixel of the 16-bit word
+            const isBlack = ((word >> bit) & 1) !== 0;
+            pixelBuf[rowPixelOffset + xBase + bit] = isBlack ? COLOR_BLACK : COLOR_WHITE;
+          }
+        }
+      }
+
+      ctx.putImageData(imgData, 0, 0);
+
+      // Optional subtle engineering overlay showing word columns & target box bounding box
+      if (showGuides) {
+        ctx.save();
+        // Highlight target box bounding guide for current K
+        const boxW = wordsPerRow * 16;
+        ctx.strokeStyle = "rgba(16, 185, 129, 0.65)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 2]);
+        ctx.strokeRect(0.5, startRow + 0.5, boxW, 20);
+
+        // Label row marker
+        ctx.setLineDash([]);
+        ctx.fillStyle = "rgba(15, 23, 42, 0.82)";
+        ctx.fillRect(boxW + 4, Math.max(2, startRow + 2), 92, 15);
+        ctx.fillStyle = "#34d399";
+        ctx.font = "10px monospace";
+        ctx.fillText(`Row ${startRow} (${boxW}x20)`, boxW + 8, Math.max(13, startRow + 13));
+        ctx.restore();
+      }
+    }
+
+    // =========================================================================
+    // 6. UI SYNCHRONIZATION & DOM UPDATES
+    // =========================================================================
+    let lastHighlightedPC = -1;
+
+    function updateParameterBar(k) {
+      const startRow = k;
+      const baseAddr = 16384 + 32 * startRow;
+      const wordsPerRow = (k % 4) + 1;
+      const widthPx = 16 * wordsPerRow;
+      const kMod3 = k % 3;
+
+      const featureDesc =
+        kMod3 === 0 ? "Exports symbols.txt" :
+        kMod3 === 1 ? "Line-numbered error checks" :
+                      "Duplicate label warning";
+
+      document.getElementById("paramStartRow").textContent = startRow;
+      document.getElementById("paramBaseAddr").textContent = `(${baseAddr})`;
+      document.getElementById("paramBoxDim").textContent = `${widthPx}×20 px`;
+      document.getElementById("paramWordsRow").textContent = `(${wordsPerRow} word${wordsPerRow > 1 ? "s" : ""}/row)`;
+      document.getElementById("paramKMod3").textContent = kMod3;
+      document.getElementById("paramExtraFeature").textContent = featureDesc;
+    }
+
+    function renderRomAndSymbolsUI() {
+      const romContainer = document.getElementById("romListContainer");
+      const romCountBadge = document.getElementById("romCountBadge");
+      romCountBadge.textContent = `${hackState.romLength} words`;
+
+      const romFragments = [];
+      for (let i = 0; i < hackState.romLength; i++) {
+        const meta = hackState.romMeta[i];
+        romFragments.push(
+          `<div id="rom-row-${i}" class="px-2.5 py-1 flex items-center justify-between gap-2 text-slate-300 hover:bg-slate-900/80">
+            <span class="text-slate-500 w-7 text-right select-none">${i}</span>
+            <span class="text-sky-300 tracking-tight">${meta.binary}</span>
+            <span class="text-slate-400 truncate max-w-[95px] text-right">${escapeHtml(meta.mnemonic)}</span>
+          </div>`
+        );
+      }
+      romContainer.innerHTML = romFragments.join("");
+      lastHighlightedPC = -1;
+
+      // Render symbols.txt
+      const symContainer = document.getElementById("symbolsListContainer");
+      const symEntries = Object.entries(hackState.symbols);
+      symContainer.innerHTML = symEntries.map(([name, addr]) => {
+        let badgeClass = "text-slate-400 bg-slate-900 border-slate-800";
+        let tag = "PRE";
+        if (hackState.labelNames.has(name)) {
+          badgeClass = "text-amber-300 bg-amber-500/10 border-amber-500/30";
+          tag = "ROM";
+        } else if (hackState.varNames.has(name)) {
+          badgeClass = "text-purple-300 bg-purple-500/10 border-purple-500/30";
+          tag = "RAM";
+        }
+        return `<div class="px-2 py-1 rounded border ${badgeClass} flex items-center justify-between gap-1">
+          <span class="truncate font-semibold">${escapeHtml(name)}</span>
+          <span class="shrink-0">${addr} <span class="opacity-60 text-[9px]">${tag}</span></span>
+        </div>`;
+      }).join("");
+
+      // Render RAM[16..19] variables panel
+      renderRamVarsPanel();
+    }
+
+    function renderRamVarsPanel() {
+      const grid = document.getElementById("ramVarsGrid");
+      const vars = Array.from(hackState.varNames);
+      if (vars.length === 0) {
+        grid.innerHTML = `<div class="col-span-4 text-slate-500 text-xs py-2">No RAM variables allocated yet.</div>`;
+        return;
+      }
+      grid.innerHTML = vars.slice(0, 8).map((vName) => {
+        const addr = hackState.symbols[vName];
+        const val = hackState.ram[addr] ?? 0;
+        return `<div class="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-2 flex flex-col">
+          <div class="flex items-center justify-between text-[10px] text-slate-400">
+            <span class="text-purple-300 font-semibold">${escapeHtml(vName)}</span>
+            <span>RAM[${addr}]</span>
+          </div>
+          <div class="text-sm font-bold text-slate-100 mt-0.5">${val}</div>
+        </div>`;
+      }).join("");
+    }
+
+    function updateTelemetryUI() {
+      const pc = hackState.pc;
+      const addrA = hackState.regA & 0x7FFF;
+      const memVal = addrA <= 24576 ? hackState.ram[addrA] : 0;
+
+      document.getElementById("regPC").textContent = pc;
+      document.getElementById("regA").textContent = hackState.regA;
+      document.getElementById("regD").textContent = hackState.regD;
+      document.getElementById("regM").textContent = memVal;
+      document.getElementById("cycleCount").textContent = hackState.cycles.toLocaleString();
+
+      const meta = hackState.romMeta[pc];
+      if (meta) {
+        document.getElementById("currentInstBinary").textContent = meta.binary;
+        document.getElementById("currentInstMnemonic").textContent = `(${meta.mnemonic})`;
+      }
+
+      // Highlight current PC row in ROM list
+      if (lastHighlightedPC !== pc) {
+        if (lastHighlightedPC >= 0) {
+          const prevEl = document.getElementById(`rom-row-${lastHighlightedPC}`);
+          if (prevEl) prevEl.classList.remove("bg-emerald-500/20", "border-l-2", "border-emerald-400");
+        }
+        const currEl = document.getElementById(`rom-row-${pc}`);
+        if (currEl) {
+          currEl.classList.add("bg-emerald-500/20", "border-l-2", "border-emerald-400");
+          if (!hackState.running || hackState.stepsPerFrame <= 5) {
+            currEl.scrollIntoView({ block: "nearest" });
+          }
+        }
+        lastHighlightedPC = pc;
+      }
+
+      // Update RAM[16..19] variable values
+      renderRamVarsPanel();
+
+      // Update HDL Architecture live bus indicators
+      document.getElementById("hdlRomAddr").textContent = `pc = ${pc}`;
+      if (meta) {
+        document.getElementById("hdlRomOut").textContent = meta.binary;
+        const isC = meta.binary.startsWith("1");
+        document.getElementById("hdlCpuType").textContent = isC ? "C-Instruction (ALU)" : "A-Instruction (@addr)";
+      }
+      document.getElementById("hdlWriteM").textContent = hackState.lastWriteM;
+      document.getElementById("hdlAddrM").textContent = addrA;
+
+      const selBits = ((addrA >> 13) & 0b11).toString(2).padStart(2, "0");
+      document.getElementById("hdlAddrBits").textContent = selBits;
+      let regionName = "RAM16K (0..16383)";
+      if (addrA === 24576) regionName = "Keyboard (24576)";
+      else if (addrA >= 16384 && addrA <= 24575) regionName = `Screen (${addrA})`;
+      document.getElementById("hdlMemRegion").textContent = regionName;
+    }
+
+    function escapeHtml(str) {
+      return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+    }
+
+    // =========================================================================
+    // 7. ASSEMBLE & LOAD WORKFLOW
+    // =========================================================================
+    function assembleAndLoad(resetMemory = true) {
+      const banner = document.getElementById("assemblerStatusBanner");
+      const src = document.getElementById("asmEditor").value;
+
+      try {
+        const result = assembleHackCode(src);
+
+        // Load ROM32K
+        hackState.rom.fill(0);
+        for (let i = 0; i < result.binaryLines.length; i++) {
+          hackState.rom[i] = parseInt(result.binaryLines[i], 2);
+        }
+        hackState.romLength = result.binaryLines.length;
+        hackState.romMeta = result.romMeta;
+        hackState.symbols = result.symbols;
+        hackState.labelNames = result.labelNames;
+        hackState.varNames = result.varNames;
+
+        if (resetMemory) {
+          const currentKbd = hackState.ram[24576];
+          hackState.ram.fill(0);
+          hackState.ram[24576] = currentKbd;
+          hackState.pc = 0;
+          hackState.regA = 0;
+          hackState.regD = 0;
+          hackState.cycles = 0;
+          hackState.screenDirty = true;
+        }
+
+        banner.className = "px-4 py-2 bg-emerald-950/40 border-b border-emerald-800/40 text-xs font-mono text-emerald-300 flex flex-wrap items-center justify-between gap-2";
+        banner.innerHTML = `<span>✓ Two-Pass Assembly succeeded: ${result.binaryLines.length} instructions encoded, ${result.labelNames.size} ROM labels, ${result.varNames.size} RAM variables allocated.</span>
+          <span class="text-slate-400">K mod 3 = ${hackState.currentK % 3} → symbols.txt updated</span>`;
+
+        renderRomAndSymbolsUI();
+        renderHackScreen();
+        updateTelemetryUI();
+      } catch (err) {
+        banner.className = "px-4 py-2 bg-rose-950/60 border-b border-rose-800/60 text-xs font-mono text-rose-300 flex items-center justify-between";
+        banner.textContent = `✕ Assembly Error: ${err.message}`;
+      }
+    }
+
+    // =========================================================================
+    // 8. KEYBOARD INPUT HANDLING (PHYSICAL + VIRTUAL TOUCH/MOUSE)
+    // =========================================================================
+    function setHackKey(code, labelText = "") {
+      hackState.ram[24576] = code;
+      const badge = document.getElementById("kbdRegisterBadge");
+      if (code === 0) {
+        badge.textContent = "0 (IDLE)";
+        badge.className = "px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300 font-bold min-w-[64px] text-center";
+      } else {
+        badge.textContent = `${code} (${labelText || "KEY"})`;
+        badge.className = "px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-400 text-emerald-300 font-bold min-w-[64px] text-center";
+      }
+    }
+
+    function mapBrowserKeyToHack(e) {
+      if (e.key === "Enter") return { code: 128, label: "ENT" };
+      if (e.key === "Backspace") return { code: 129, label: "BSP" };
+      if (e.key === "ArrowLeft") return { code: 130, label: "←" };
+      if (e.key === "ArrowUp") return { code: 131, label: "↑" };
+      if (e.key === "ArrowRight") return { code: 132, label: "→" };
+      if (e.key === "ArrowDown") return { code: 133, label: "↓" };
+      if (e.key === "Home") return { code: 134, label: "HOM" };
+      if (e.key === "End") return { code: 135, label: "END" };
+      if (e.key === "PageUp") return { code: 136, label: "PGU" };
+      if (e.key === "PageDown") return { code: 137, label: "PGD" };
+      if (e.key === "Insert") return { code: 138, label: "INS" };
+      if (e.key === "Delete") return { code: 139, label: "DEL" };
+      if (e.key === "Escape") return { code: 140, label: "ESC" };
+      if (e.key.length === 1) {
+        const ascii = e.key.charCodeAt(0);
+        if (ascii >= 32 && ascii <= 126) {
+          return { code: ascii, label: e.key === " " ? "SPC" : e.key.toUpperCase() };
+        }
+      }
+      return { code: 32, label: "KEY" };
+    }
+
+    window.addEventListener("keydown", (e) => {
+      // Do not hijack typing inside the assembly textarea or K input box
+      const tag = document.activeElement?.tagName;
+      if (tag === "TEXTAREA" || tag === "INPUT") return;
+
+      if (e.key === " ") e.preventDefault();
+      const mapped = mapBrowserKeyToHack(e);
+      setHackKey(mapped.code, mapped.label);
+    });
+
+    window.addEventListener("keyup", (e) => {
+      const tag = document.activeElement?.tagName;
+      if (tag === "TEXTAREA" || tag === "INPUT") return;
+      setHackKey(0);
+    });
+
+    // Bind pointer events for on-screen Hold Space & Virtual Keys
+    function bindHoldButton(btn, keyCode, label) {
+      const press = (e) => {
+        e.preventDefault();
+        setHackKey(keyCode, label);
+      };
+      const release = (e) => {
+        e.preventDefault();
+        setHackKey(0);
+      };
+      btn.addEventListener("mousedown", press);
+      btn.addEventListener("mouseup", release);
+      btn.addEventListener("mouseleave", release);
+      btn.addEventListener("touchstart", press, { passive: false });
+      btn.addEventListener("touchend", release, { passive: false });
+      btn.addEventListener("touchcancel", release, { passive: false });
+    }
+
+    bindHoldButton(document.getElementById("holdSpaceBtn"), 32, "SPC");
+    document.querySelectorAll(".virtual-key").forEach((btn) => {
+      const code = parseInt(btn.dataset.keycode, 10);
+      const label = btn.dataset.label;
+      bindHoldButton(btn, code, label);
+    });
+
+    // =========================================================================
+    // 9. CONTROLS, TABS, DOWNLOADS & CANVAS TOOLTIP
+    // =========================================================================
+    document.getElementById("recalcKBtn").addEventListener("click", () => {
+      const raw = parseInt(document.getElementById("kInput").value, 10);
+      const validK = isNaN(raw) ? 75 : Math.max(0, Math.min(235, raw));
+      document.getElementById("kInput").value = validK;
+      hackState.currentK = validK;
+      updateParameterBar(validK);
+      document.getElementById("asmEditor").value = generateBoxAsmForK(validK);
+      assembleAndLoad(true);
+    });
+
+    document.getElementById("assembleBtn").addEventListener("click", () => {
+      assembleAndLoad(true);
+    });
+
+    document.getElementById("runPauseBtn").addEventListener("click", () => {
+      hackState.running = !hackState.running;
+      const btn = document.getElementById("runPauseBtn");
+      const status = document.getElementById("cpuRunStatus");
+      const dot = document.getElementById("screenStatusDot");
+
+      if (hackState.running) {
+        btn.textContent = "Pause";
+        btn.className = "px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs transition cursor-pointer";
+        status.textContent = "RUNNING";
+        status.className = "px-2 py-0.5 text-[11px] font-mono font-semibold rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30";
+        dot.classList.add("animate-pulse");
+      } else {
+        btn.textContent = "Run";
+        btn.className = "px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs transition cursor-pointer";
+        status.textContent = "PAUSED";
+        status.className = "px-2 py-0.5 text-[11px] font-mono font-semibold rounded bg-amber-500/15 text-amber-300 border border-amber-500/30";
+        dot.classList.remove("animate-pulse");
+        updateTelemetryUI();
+      }
+    });
+
+    document.getElementById("stepBtn").addEventListener("click", () => {
+      if (hackState.running) {
+        document.getElementById("runPauseBtn").click();
+      }
+      stepHackCPU();
+      if (hackState.screenDirty) {
+        renderHackScreen();
+        hackState.screenDirty = false;
+      }
+      updateTelemetryUI();
+    });
+
+    document.getElementById("resetBtn").addEventListener("click", () => {
+      hackState.ram.fill(0);
+      hackState.pc = 0;
+      hackState.regA = 0;
+      hackState.regD = 0;
+      hackState.cycles = 0;
+      setHackKey(0);
+      renderHackScreen();
+      updateTelemetryUI();
+    });
+
+    document.getElementById("clearScreenBtn").addEventListener("click", () => {
+      hackState.ram.fill(0, 16384, 24576);
+      renderHackScreen();
+    });
+
+    document.getElementById("gridOverlayToggle").addEventListener("change", () => {
+      renderHackScreen();
+    });
+
+    const SPEED_MODES = {
+      1: { steps: 1,   label: "Slow (1/frame)" },
+      2: { steps: 15,  label: "Medium (15/frame)" },
+      3: { steps: 100, label: "Fast (100/frame)" },
+      4: { steps: 450, label: "Turbo (450/frame)" }
+    };
+
+    document.getElementById("speedSlider").addEventListener("input", (e) => {
+      const mode = SPEED_MODES[e.target.value] || SPEED_MODES[4];
+      hackState.stepsPerFrame = mode.steps;
+      document.getElementById("speedLabel").textContent = mode.label;
+    });
+
+    // Tab Navigation
+    document.querySelectorAll(".tab-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const target = btn.dataset.tab;
+        document.querySelectorAll(".tab-btn").forEach((b) => {
+          b.className = "tab-btn px-3 py-1.5 rounded-md text-xs font-semibold text-slate-400 hover:text-white transition cursor-pointer";
+        });
+        btn.className = "tab-btn px-3 py-1.5 rounded-md text-xs font-semibold bg-emerald-600 text-white transition cursor-pointer";
+
+        document.getElementById("tab-workbench").classList.toggle("hidden", target !== "workbench");
+        document.getElementById("tab-hdl").classList.toggle("hidden", target !== "hdl");
+        document.getElementById("tab-guide").classList.toggle("hidden", target !== "guide");
+      });
+    });
+
+    // File Downloads (Box.hack & symbols.txt)
+    function triggerTextDownload(filename, content) {
+      const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    document.getElementById("downloadHackBtn").addEventListener("click", () => {
+      const lines = hackState.romMeta.map((m) => m.binary).join("\n") + "\n";
+      triggerTextDownload("Box.hack", lines);
+    });
+
+    document.getElementById("downloadSymbolsBtn").addEventListener("click", () => {
+      const lines = Object.entries(hackState.symbols)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join("\n") + "\n";
+      triggerTextDownload("symbols.txt", lines);
+    });
+
+    // Canvas Coordinate & Memory Address Inspector on Hover
+    const tooltip = document.getElementById("canvasHoverTooltip");
+    canvas.addEventListener("mousemove", (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = Math.max(0, Math.min(511, Math.floor(((e.clientX - rect.left) / rect.width) * 512)));
+      const y = Math.max(0, Math.min(255, Math.floor(((e.clientY - rect.top) / rect.height) * 256)));
+      const wordOffset = Math.floor(x / 16);
+      const bit = x % 16;
+      const ramAddr = 16384 + y * 32 + wordOffset;
+
+      tooltip.classList.remove("hidden");
+      tooltip.textContent = `Row ${y}, Col ${x} | Word ${wordOffset} (bit ${bit}) | RAM[${ramAddr}]`;
+    });
+    canvas.addEventListener("mouseleave", () => {
+      tooltip.classList.add("hidden");
+    });
+
+    // =========================================================================
+    // 10. MAIN ANIMATION LOOP (WINDOW ONLOAD)
+    // =========================================================================
+    let frameCounter = 0;
+
+    function simulationLoop() {
+      if (hackState.running && hackState.romLength > 0) {
+        const count = hackState.stepsPerFrame;
+        for (let i = 0; i < count; i++) {
+          stepHackCPU();
+        }
+        if (hackState.screenDirty) {
+          renderHackScreen();
+          hackState.screenDirty = false;
+        }
+        // Throttle DOM register text updates slightly at Turbo speed for smooth 60fps
+        frameCounter++;
+        if (count <= 15 || frameCounter % 3 === 0) {
+          updateTelemetryUI();
+        }
+      }
+      requestAnimationFrame(simulationLoop);
+    }
+
+    window.onload = function () {
+      hackState.currentK = 75;
+      updateParameterBar(75);
+      document.getElementById("asmEditor").value = generateBoxAsmForK(75);
+      assembleAndLoad(true);
+      requestAnimationFrame(simulationLoop);
+    };
+  </script>
+</body>
+</html>
